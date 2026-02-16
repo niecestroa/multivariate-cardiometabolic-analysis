@@ -61,3 +61,7 @@ This academic project was completed as part of **Applied Multivariate Data Analy
 - Improve outlier diagnostics and removal criteria  
 - Validate findings across multiple populations
 
+---
+
+## **Disclaimer (Academic Use Only)**  
+This repository and all associated analyses, simulations, figures, and documentation are intended **solely for academic, educational, and research purposes**. The methods, models, and results presented here **must not** be used for clinical decision‑making, medical guidance, or real‑world patient care.
