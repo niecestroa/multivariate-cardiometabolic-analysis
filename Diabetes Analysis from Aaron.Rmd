@@ -1,0 +1,1890 @@
+---
+title: "PH1821 Project Analysis"
+author: "Aaron Niecestro"
+date: "April 25, 2025"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Section 1: Loading Packages
+
+```{r loading packages, warning=FALSE, message=FALSE}
+# Cleaning the data
+library(tidyverse)
+library(dplyr)
+
+# Visualize the data
+library(ggplot2)
+library(purrr)
+
+# MultivariateNormality Check
+library(mvShapiroTest)
+library(mvnormtest)
+
+# Hotelling T^2 test
+library(MASS)
+library(car)
+
+# MANOVA
+library(heplots)
+library(biotools)
+```
+
+## Section 2: Loading Dataset
+
+```{r loading dataset}
+Diabetes_Final_Data_V2 <- read.csv("~/UTH Applied Multivariate Analysis/PH1821 Final Project/Project Analysis/Diabetes_Final_Data_V2.csv")
+names(Diabetes_Final_Data_V2)
+nrow(Diabetes_Final_Data_V2)
+```
+
+### Cleaning Dataset
+
+```{r cleaning dataset}
+Diabetes <- Diabetes_Final_Data_V2 %>% 
+  filter(age >= 18) %>%
+  filter(bmi >= 15 & bmi <=55) %>%
+  filter(pulse_rate >= 40) %>%
+  filter(systolic_bp <= 210) %>%
+  filter(glucose >=4.0 & glucose <= 13.3) %>%
+  mutate(
+    bmi_cat = case_when(
+      bmi < 18.5 ~ "Underweight",
+      bmi >= 18.5 & bmi < 25 ~ "Healthy",
+      bmi >= 25 & bmi < 30 ~ "Overweight",
+      bmi >= 30 ~ "Obese"
+    ),
+    bmi_cat = fct_relevel(bmi_cat, "Healthy")
+  ) %>%
+  mutate(
+    hypertensive = case_when(
+      hypertensive == 0 ~ "No",
+      hypertensive == 1 ~ "Yes",
+      TRUE ~ NA_character_
+    ),hypertensive = fct_relevel(hypertensive, "No")
+  ) %>%
+  mutate(gender = as.factor(gender)) %>%
+  mutate(hypertensive = as.factor(hypertensive)) %>%
+  mutate(bmi_cat = as.factor(bmi_cat)) %>%
+  mutate(age = as.numeric(age)) %>%
+  mutate(pulse_rate = as.numeric(pulse_rate)) %>%
+  mutate(systolic_bp = as.numeric(systolic_bp)) %>%
+  mutate(diastolic_bp = as.numeric(diastolic_bp)) %>%
+  mutate(glucose = as.numeric(glucose)) %>%
+  dplyr::select(pulse_rate, systolic_bp, diastolic_bp, glucose, age, gender, hypertensive, gender, bmi_cat)
+
+nrow(Diabetes)
+names(Diabetes)
+```
+
+### Summary Statistics
+
+```{r summary stat, message=FALSE, warning=FALSE}
+attach(Diabetes)
+
+summary(Diabetes)
+```
+
+```{r visual summary stat}
+# Visualizing BMI Category vs Age distribution
+ggplot(Diabetes, aes(x = bmi_cat, y = age)) +
+  geom_boxplot() +
+  labs(title = "BMI Category vs Age", y = "Age", x = "BMI Category")
+
+ggplot(Diabetes, aes(x = gender, y = age)) +
+  geom_boxplot() +
+  labs(title = "Gender vs Age", y = "Age", x = "Gender")
+
+ggplot(Diabetes, aes(x = hypertensive, y = age)) +
+  geom_boxplot() +
+  labs(title = "Hypertension vs Age", y = "Age", x = "Hypertension")
+```
+
+## Section 3.1: Univariate Assumptions
+
+### Normality
+
+```{r uni normality}
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "age")
+
+par(mfrow = c(1, 1)) # Adjust plot layout (2 rows, 3 columns)
+
+for (v in vars) {
+  qqnorm(Diabetes[[v]], main = paste("Q-Q Plot:", v))
+  qqline(Diabetes[[v]], col = "red", lwd=2)
+}
+
+# Loop and plot histograms
+for (v in vars) {
+  print(
+    ggplot(Diabetes, aes(x = .data[[v]])) +
+      geom_histogram(bins = 30, fill = "darkblue", color = "black", alpha = 0.8) +
+      labs(title = paste("Histogram of", v),
+           x = v,
+           y = "Count") +
+      theme_minimal()
+  )
+}
+```
+
+
+## Section 3.2: Multivariate Assumptions
+
+### Basic Check of Variables
+
+```{r multi basic check}
+# remove missing data and pick first 5 columns
+# Response and 1 numeric predictor
+X <- as.matrix(na.omit(Diabetes[,1:5])) 
+  
+( n <- nrow(X) )
+( p <- ncol(X) )
+
+cor(X)
+pairs(X)
+
+one <- cbind(rep(1, n)) # n x 1, one vector
+
+# sample mean vector
+( xbar <- cbind(colMeans(X)) )
+( (1/n) * t(X)%*%one )
+
+# deviation vectors (centered matrix)
+Xc_1 = scale(X, center = T, scale = F)
+Xc_2 = X - one %*% t(xbar)
+Xc_3 = X - (1/n)*one%*% t(one)%*%X 
+
+head(Xc_1)
+head(Xc_2)
+head(Xc_3)
+
+# sample covariance matrix
+( S <- cov(X) )
+( t(X)%*%(diag(n)-(1/n)*one%*%t(one))%*%X /(n-1) )
+```
+
+```{r}
+# remove missing data and pick first 4 columns
+# Just for response
+X <- as.matrix(na.omit(Diabetes[,1:4])) 
+  
+( n <- nrow(X) )
+( p <- ncol(X) )
+
+cor(X)
+pairs(X)
+
+one <- cbind(rep(1, n)) # n x 1, one vector
+
+# sample mean vector
+( xbar <- cbind(colMeans(X)) )
+( (1/n) * t(X)%*%one )
+
+# deviation vectors (centered matrix)
+Xc_1 = scale(X, center = T, scale = F)
+Xc_2 = X - one %*% t(xbar)
+Xc_3 = X - (1/n)*one%*% t(one)%*%X 
+
+head(Xc_1)
+head(Xc_2)
+head(Xc_3)
+
+# sample covariance matrix
+( S <- cov(X) )
+( t(X)%*%(diag(n)-(1/n)*one%*%t(one))%*%X /(n-1) )
+```
+
+### Normality for Response
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+## 1. Assessing the Assumption of Normality ####
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+# Multivariate Case
+
+# Chi-Square Plot
+
+xbars <- cbind(colMeans(X))
+S <- cov(X)
+
+dsq = mahalanobis(X, xbars, S)
+#ppoints calculates the list of the probability level, qchisq gets quantiles
+plot(qchisq(ppoints(n), df = p), sort(dsq),
+     cex = 2, pch = 19, col = rgb(1, 0, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Chi-Square Plot for Diabetes Data")
+abline(0, 1, col = "gray", lwd = 2)
+
+# below marks the points on the graph – use throughout semester
+# text(qchisq(ppoints(n), df = p), sort(dsq), labels = order(dsq), pos = 1, cex = 1)
+
+# Multivariate Shapiro-Wilk's Test 
+
+set.seed(123)  # Set seed for reproducibility
+
+# Randomly sample 5000 indices (assumes all datasets have at least 5000 observations)
+sample_indices <- sample(seq_len(nrow(X)), size = 5000)
+
+mvShapiro.Test(as.matrix(X[sample_indices,]))
+
+mshapiro.test(t(as.matrix(X[sample_indices,]))) # input is a transpose data p x n
+
+# most notable outliers are 1320, and 2722
+```
+
+### Transformations for Response
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+## 3. Transformation to Near Normality ####
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+# 1. Marginal Optimization (this is slide 23 in lecture 7)
+
+( opt1 <- boxcox(lm(X[,1]~1)) ) # Closed (X1) case
+( lam1 <- opt1$x[which.max(opt1$y)] )
+Y1 = (X[,1]^lam1 - 1)/lam1
+
+opt2 <- boxcox(lm(X[,2]~1)) # Open (X2) case
+( lam2 <- opt2$x[which.max(opt2$y)] )
+Y2 = (X[,2]^lam2 - 1)/lam2
+
+Y = cbind(Y1, Y2) # Transformed Data
+ybars = cbind(colMeans(Y))
+Sy = cov(Y)
+
+# Compare chi-square plot
+
+#par(mfrow=c(2,1))
+
+dsq = mahalanobis(X, xbars, S)
+plot(qchisq(ppoints(n), df = p), sort(dsq),
+     cex = 2, pch = 19, col = rgb(1, 0, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Chi-Square Plot for Original Data")
+abline(0, 1, col = "gray", lwd = 2)
+
+#text(qchisq(ppoints(n), df = p), sort(dsq), labels = order(dsq), pos = 1, cex = 0.8)
+
+mvShapiro.Test(as.matrix(X[1:5000])) # original data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+
+mvShapiro.Test(as.matrix(Y[1:5000])) # transformed data
+# answer is to not reject the null hypothesis and conclude that normality is valid
+
+# 2. Simultaneous Optimization
+
+bc_result <- powerTransform(X) 
+W = bcPower(X, coef(bc_result)) # Transformed data
+
+wbars = cbind(colMeans(W))
+Sw = cov(W)
+
+# par(mfrow=c(1,2))
+
+dsqy = mahalanobis(Y, ybars, Sy)
+plot(qchisq(ppoints(n), df = p), sort(dsqy),
+     cex = 2, pch = 19, col = rgb(0, 0, 1, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Marginal Optimization")
+abline(0, 1, col = "gray", lwd = 2)
+
+# worse then just chi-sqaured plot without transformations
+
+# text(qchisq(ppoints(n), df = p), sort(dsqy), labels = order(dsqy), pos = 1, cex = 0.8)
+
+dsqw = mahalanobis(W, wbars, Sw)
+plot(qchisq(ppoints(n), df = p), sort(dsqw),
+     cex = 2, pch = 19, col = rgb(0, 1, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Simultaneous Optimization")
+abline(0, 1, col = "gray", lwd = 2)
+
+# text(qchisq(ppoints(n), df = p), sort(dsqw), labels = order(dsqw), pos = 1, cex = 0.8)
+
+# Better than the no transformation plot and optimiation transformation plot
+# major outliers are 1945, 3820, 2722, and 3821
+```
+
+### Checking for Outliers for Response
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+## 2. Detecting Outliers ####
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+# did not use dot plots since I do not feel they are helpful
+
+# 2. Pairwise Scatterplot
+
+panel_with_labels <- function(x, y, ...) {
+  points(x, y, pch = 16, col = rgb(1, 0, 0, 0.3), cex = 1.5) 
+  #text(x, y, labels = 1:length(x), pos = 2, cex = 1, col = "black")  
+}
+
+pairs(X, lower.panel = panel_with_labels, upper.panel = panel_with_labels)
+
+# 3. Standardize Values
+
+Z = cbind(scale(X))
+
+# 4. (Squared) Statistical Distance
+
+dsq = mahalanobis(X, xbars, S)
+
+par(mfrow=c(1,1)) # reset the layout of plots
+par(mar = c(5, 4, 4, 2)) # reset the margin
+plot(qchisq(ppoints(n), df = p), sort(dsq),
+     cex = 2, pch = 19, col = rgb(1, 0, 0, 0.3),
+     xlab = "Theoretical Qunatiles",
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Chi-Square Plot for Diabetes Data")
+abline(0, 1, col = "gray", lwd = 2)
+
+#text(qchisq(ppoints(n), df = p), sort(dsq), labels = order(dsq), pos = 1, cex = 1)
+
+dsqw = mahalanobis(W, wbars, Sw)
+plot(qchisq(ppoints(n), df = p), sort(dsqw),
+     cex = 2, pch = 19, col = rgb(0, 1, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Simultaneous Optimization")
+abline(0, 1, col = "gray", lwd = 2)
+
+# Show the outliers below
+# Compute Mahalanobis distance
+X_out <- as.matrix(na.omit(Diabetes[,1:4])) 
+
+mahal_dist <- mahalanobis(X_out, colMeans(X_out), cov(X_out))
+
+# Set a threshold (e.g., 97.5 percentile)
+threshold <- qchisq(0.975, df = ncol(X_out))
+
+# Flag outliers
+outliers <- mahal_dist > threshold
+
+# View results
+length(X_out[outliers, ]) # list of outliers
+```
+
+### Re-do Transformations for Response after getting rid of outliers
+
+```{r}
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+## 4. Without the outliers found above ####
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# Try without outliers
+X_out_clean <- X_out[!outliers, ]
+
+n_clean = nrow(X_out_clean)
+p_clean = ncol(X_out_clean)
+
+xbars_clean <- cbind(colMeans(X_out_clean))
+S_clean <- cov(X_out_clean)
+
+# 1. Marginal Optimization (this is slide 23 in lecture 7)
+
+( opt1 <- boxcox(lm(X_out_clean[,1]~1)) ) # 
+( lam1 <- opt1$x[which.max(opt1$y)] )
+Y1_clean = (X_out_clean[,1]^lam1 - 1)/lam1
+
+opt2 <- boxcox(lm(X_out_clean[,2]~1)) # 
+( lam2 <- opt2$x[which.max(opt2$y)] )
+Y2_clean = (X_out_clean[,2]^lam2 - 1)/lam2
+
+Y_clean = cbind(Y1_clean, Y2_clean) # Transformed Data
+ybars_clean = cbind(colMeans(Y_clean))
+Sy_clean = cov(Y_clean)
+
+# Compare chi-square plot
+
+#par(mfrow=c(2,1))
+
+dsq_clean = mahalanobis(X_out_clean, xbars_clean, S_clean)
+plot(qchisq(ppoints(n_clean), df = p_clean), sort(dsq_clean),
+     cex = 2, pch = 19, col = rgb(1, 0, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Chi-Square Plot for Original Data")
+abline(0, 1, col = "gray", lwd = 2)
+
+dsqy_clean = mahalanobis(Y_clean, ybars_clean, Sy_clean)
+plot(qchisq(ppoints(n_clean), df = p_clean), sort(dsqy_clean),
+     cex = 2, pch = 19, col = rgb(0, 0, 1, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Marginal Optimization")
+abline(0, 1, col = "gray", lwd = 2)
+
+mvShapiro.Test(as.matrix(X_out_clean)) # original data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+
+mvShapiro.Test(as.matrix(Y_clean)) # transformed data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+# made it look worse
+
+# 2. Simultaneous Optimization
+
+bc_result_clean <- powerTransform(X_out_clean)
+W_clean = bcPower(X_out_clean, coef(bc_result)) # Transformed data
+
+wbars_clean = cbind(colMeans(W_clean))
+Sw_clean = cov(W_clean)
+
+dsqw_clean = mahalanobis(W_clean, wbars_clean, Sw_clean)
+plot(qchisq(ppoints(n_clean), df = p_clean), sort(dsqw_clean),
+     cex = 2, pch = 19, col = rgb(0, 1, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Simultaneous Optimization")
+abline(0, 1, col = "gray", lwd = 2)
+
+mvShapiro.Test(as.matrix(X_out_clean)) # original data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+
+mvShapiro.Test(as.matrix(Y_clean)) # transformed data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+# made it look worse
+
+mvShapiro.Test(as.matrix(W_clean)) # transformed data
+# answer is to reject the null hypothesis and conclude that normality is not valid
+# better than option 1, and lower test statistic
+
+# no change in outcome before and after outliers => still reject normality
+```
+
+```{r}
+set.seed(123)  # Set seed for reproducibility
+
+# Randomly sample 5000 indices (assumes all datasets have at least 5000 observations)
+sample_indices <- sample(seq_len(nrow(X_out)), size = 5000)
+
+# Subset using the same indices
+X_notclean <- X_out[sample_indices, ]
+Y_notclean <- Y[sample_indices, ]
+W_notclean <- W[sample_indices, ]
+
+# Create list and names
+list_of_datasets <- list(X_notclean, Y_notclean, W_notclean, 
+                         X_out_clean, Y_clean, W_clean)
+dataset_names <- c("X_notclean", "Y_notclean", "W_notclean", 
+                   "X_out_clean", "Y_clean", "W_clean")
+
+# Loop through each dataset
+for (i in seq_along(list_of_datasets)) {
+  data_matrix <- as.matrix(list_of_datasets[[i]])
+  result <- mvShapiro.Test(data_matrix)
+  
+  test_statistic <- result$statistic
+  p_value <- result$p.value
+  
+  cat("\n---", dataset_names[i], "---\n")
+  cat("Test statistic:", round(test_statistic, 4), "\n")
+  cat("P-value:", p_value, "\n")
+  
+  if (p_value < 0.05) {
+    cat("Conclusion: Reject the null hypothesis — not multivariate normal.\n")
+  } else {
+    cat("Conclusion: Fail to reject the null — appears multivariate normal.\n")
+  }
+}
+
+# Trust the no outlier with Simultaneous Optimization Transformation from the plot the best
+```
+
+Trust the no outlier with Simultaneous Optimization Transformation from the plot the best
+
+```{r}
+# With Outliers => Simultaneous Optimization Transformation has the best chi^2 plot
+
+dsqw = mahalanobis(W, wbars, Sw)
+plot(qchisq(ppoints(n), df = p), sort(dsqw),
+     cex = 2, pch = 19, col = rgb(0, 1, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Simultaneous Optimization w/ Outliers")
+abline(0, 1, col = "gray", lwd = 2)
+
+mvShapiro.Test(as.matrix(W_notclean)) # transformed data
+
+# Without Outlier => Simultaneous Optimization Transformation has the best chi^2 plot
+
+dsqw_clean = mahalanobis(W_clean, wbars_clean, Sw_clean)
+plot(qchisq(ppoints(n_clean), df = p_clean), sort(dsqw_clean),
+     cex = 2, pch = 19, col = rgb(0, 1, 0, 0.3),
+     xlab = "Theoretical Qunatiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Transf via Simultaneous Optimization w/out Outliers")
+abline(0, 1, col = "gray", lwd = 2)
+
+mvShapiro.Test(as.matrix(W_clean)) # transformed data
+
+# Comparing with and without outliers => without outliers has the best chi^2 plot
+# However the test statistic is better with the outliers than without
+
+# Thinking of just using Simultaneous Optimization with the outliers since I wish to see what the model shows and then re-run this with the influential outliers
+```
+
+## Section 4: Project Analysis 
+
+### Hotelling’s $T^2$ for one sample (corresponding large-sample version)
+
+```{r}
+n_ht = nrow(Diabetes)
+p_ht = ncol(Diabetes[,1:5])
+
+xbars_ht <- cbind(colMeans(Diabetes[,1:5]))
+S_ht <- cov(Diabetes[,1:5])
+
+#pulse_rate    76.490686
+#systolic_bp  133.396155
+#diastolic_bp  81.889814
+#glucose        7.122654
+#age           45.327586
+
+# H0: mu_age = 0
+## Conducting Hypothesis Test for Large Sample Approach(Hotelling's T-square) 
+
+mu0_ht = cbind(c(80, 130,80,7,50))
+( T_sq = t(xbars_ht-mu0_ht) %*% solve((1/n_ht)*S_ht) %*% (xbars_ht-mu0_ht) )
+
+alpha = 0.05
+( crit_ht = qchisq(1 - alpha, p_ht) )
+
+T_sq > crit_ht # True: Reject H0; False 
+
+( pvalue_ht = pchisq(T_sq, df = p_ht, lower.tail = F) )
+
+# This test turned out to be true so we reject the null hypothesis
+```
+
+#### Confidence Intervals
+
+```{r}
+## Simultaneous Confidence Statements
+
+alpha = 0.05
+( crit = (((n-1)*p)/(n-p))*qf(alpha, p, n-p, lower.tail=F) )
+c = sqrt(crit)
+
+#T-squared Intervals
+cat("T-squared Confidence Intervals:\n")
+for (i in 1:p) {
+  interval <- xbars[i] + c(-1, 1) * c * sqrt(S[i, i] / n)
+  cat(sprintf("Variable %d: [%.3f, %.3f]\n", i, interval[1], interval[2]))
+}
+
+#Bonferroni-Corrected Intervals
+cat("\nBonferroni-Corrected Confidence Intervals:\n")
+for (i in 1:p) {
+  interval <- xbars[i] + c(-1, 1) * qt(alpha / (2 * p), n - 1, lower.tail = FALSE) * sqrt(S[i, i] / n)
+  cat(sprintf("Variable %d: [%.3f, %.3f]\n", i, interval[1], interval[2]))
+}
+```
+
+### Two Group Comparison (Paired Difference)
+
+#### Gender vs (age and glucose)
+
+```{r}
+# Select variables
+vars <- c("age", "glucose")
+
+# Subset by gender
+male   <- subset(Diabetes, gender == "Male")[, vars]
+female <- subset(Diabetes, gender == "Female")[, vars]
+
+# Pair observations: use equal size
+n <- min(nrow(male), nrow(female))
+male   <- male[1:n, ]
+female <- female[1:n, ]
+
+# ------------------------------
+# 1. Multivariate Normality Check
+# ------------------------------
+D <- male - female
+dbars <- colMeans(D)
+Sd <- cov(D)
+
+dsq <- mahalanobis(D, dbars, Sd)
+qqplot(qchisq(ppoints(n), df = 2), sort(dsq),
+       xlab = "Theoretical Quantiles",
+       ylab = "Sorted Mahalanobis Distances",
+       main = "Chi-Square Q-Q Plot (Paired Differences)",
+       pch = 19, col = rgb(0.2, 0.4, 0.8, 0.5))
+abline(0, 1, col = "gray", lwd = 2)
+
+mshapiro.test(t(as.matrix(D)))  # Test normality
+
+# ------------------------------
+# 2. Hotelling’s T² Test: Paired
+# ------------------------------
+p <- ncol(D)
+delta0 <- matrix(c(0, 0), ncol = 1)
+
+T_sq <- t(dbars - delta0) %*% solve((1/n) * Sd) %*% (dbars - delta0)
+crit <- ((n - 1) * p / (n - p)) * qf(0.95, p, n - p)
+pval <- pf((n - p) * T_sq / ((n - 1) * p), df1 = p, df2 = n - p, lower.tail = FALSE)
+
+cat("Hotelling’s T² (Paired):", T_sq, "\n")
+cat("Critical Value:", crit, "\n")
+cat("p-value:", pval, "\n")
+
+# ------------------------------
+# 3. 95% Confidence Ellipse (Paired)
+# ------------------------------
+
+# Helper function to generate ellipse data
+gen_2D_ellipse_data <- function(center, cov_matrix, radius, npoints = 100) {
+  angles <- seq(0, 2 * pi, length.out = npoints)
+  unit_circle <- cbind(cos(angles), sin(angles))
+  ellipse <- t(center + radius * t(unit_circle %*% chol(cov_matrix)))
+  return(ellipse)
+}
+
+Q <- (1/n) * Sd
+c_val <- sqrt(crit)
+cr <- gen_2D_ellipse_data(dbars, Q, c_val)
+
+plot(cr[,1], cr[,2], type = "l", asp = 1,
+     xlab = expression(paste(delta[1], ": Age")),
+     ylab = expression(paste(delta[2], ": Glucose")),
+     main = "95% Confidence Region (Paired)",
+     lwd = 2, col = "blue")
+points(0, 0, pch = 15, col = "black")
+legend("topright", legend = c("Null Value"), pch = 15, col = "black")
+
+# ------------------------------
+# 4. Hotelling’s T² Test: Independent
+# ------------------------------
+x1bar <- colMeans(male)
+x2bar <- colMeans(female)
+
+S1 <- cov(male)
+S2 <- cov(female)
+Sp <- ((n - 1)*S1 + (n - 1)*S2) / (2*n - 2)
+SE <- (1/n + 1/n) * Sp
+
+diff_bar <- x1bar - x2bar
+T_sq_indep <- t(diff_bar) %*% solve(SE) %*% diff_bar
+crit_indep <- ((2*n - 2) * p / (2*n - p - 1)) * qf(0.95, p, 2*n - p - 1)
+pval_indep <- pf(T_sq_indep * (2*n - p - 1) / (p * (2*n - 2)), df1 = p, df2 = 2*n - p - 1, lower.tail = FALSE)
+
+cat("Hotelling’s T² (Independent):", T_sq_indep, "\n")
+cat("Critical Value:", crit_indep, "\n")
+cat("p-value:", pval_indep, "\n")
+
+# ------------------------------
+# 5. Compare Confidence Regions
+# ------------------------------
+cr_indep <- gen_2D_ellipse_data(diff_bar, SE, sqrt(crit_indep))
+
+plot(cr[,1], cr[,2], type = "l", col = "blue", lwd = 2, asp = 1,
+     xlab = expression(paste(delta[1], ": Age")),
+     ylab = expression(paste(delta[2], ": Glucose")),
+     main = "95% Confidence Regions: Paired vs Independent",
+     xlim = range(c(cr[,1], cr_indep[,1])),
+     ylim = range(c(cr[,2], cr_indep[,2])))
+lines(cr_indep[,1], cr_indep[,2], col = "red", lwd = 2, lty = 2)
+points(0, 0, pch = 15, col = "black")
+
+legend("topright",
+       legend = c("Paired", "Independent", "Null Value"),
+       col = c("blue", "red", "black"),
+       lty = c(1, 2, NA), pch = c(NA, NA, 15))
+```
+
+#### Hypertensive vs Age and Glucose
+
+```{r}
+# Select variables
+vars <- c("age", "glucose")
+
+# Subset by hypertensive status
+yes_htn <- subset(Diabetes, hypertensive == "Yes")[, vars]
+no_htn  <- subset(Diabetes, hypertensive == "No")[, vars]
+
+# Make equal sample sizes for pairing
+n <- min(nrow(yes_htn), nrow(no_htn))
+yes_htn <- yes_htn[1:n, ]
+no_htn  <- no_htn[1:n, ]
+
+# ------------------------------
+# 1. Multivariate Normality Check
+# ------------------------------
+D <- yes_htn - no_htn
+dbars <- colMeans(D)
+Sd <- cov(D)
+
+dsq <- mahalanobis(D, dbars, Sd)
+qqplot(qchisq(ppoints(n), df = 2), sort(dsq),
+       xlab = "Theoretical Quantiles",
+       ylab = "Sorted Mahalanobis Distances",
+       main = "Chi-Square Q-Q Plot (Paired Differences)",
+       pch = 19, col = rgb(0.2, 0.4, 0.8, 0.5))
+abline(0, 1, col = "gray", lwd = 2)
+
+mshapiro.test(t(as.matrix(D)))  # Normality test
+
+# ------------------------------
+# 2. Hotelling’s T² Test: Paired
+# ------------------------------
+p <- ncol(D)
+delta0 <- matrix(c(0, 0), ncol = 1)
+
+T_sq <- t(dbars - delta0) %*% solve((1/n) * Sd) %*% (dbars - delta0)
+crit <- ((n - 1) * p / (n - p)) * qf(0.95, p, n - p)
+pval <- pf((n - p) * T_sq / ((n - 1) * p), df1 = p, df2 = n - p, lower.tail = FALSE)
+
+cat("Hotelling’s T² (Paired):", T_sq, "\n")
+cat("Critical Value:", crit, "\n")
+cat("p-value:", pval, "\n")
+
+# ------------------------------
+# 3. 95% Confidence Ellipse (Paired)
+# ------------------------------
+
+# Ellipse generator function
+gen_2D_ellipse_data <- function(center, cov_matrix, radius, npoints = 100) {
+  angles <- seq(0, 2 * pi, length.out = npoints)
+  unit_circle <- cbind(cos(angles), sin(angles))
+  ellipse <- t(center + radius * t(unit_circle %*% chol(cov_matrix)))
+  return(ellipse)
+}
+
+Q <- (1/n) * Sd
+c_val <- sqrt(crit)
+cr <- gen_2D_ellipse_data(dbars, Q, c_val)
+
+plot(cr[,1], cr[,2], type = "l", asp = 1,
+     xlab = expression(paste(delta[1], ": Age")),
+     ylab = expression(paste(delta[2], ": Glucose")),
+     main = "95% Confidence Region (Paired)",
+     lwd = 2, col = "blue")
+points(0, 0, pch = 15, col = "black")
+legend("topright", legend = c("Null Value"), pch = 15, col = "black")
+
+# ------------------------------
+# 4. Hotelling’s T² Test: Independent
+# ------------------------------
+x1bar <- colMeans(yes_htn)
+x2bar <- colMeans(no_htn)
+
+S1 <- cov(yes_htn)
+S2 <- cov(no_htn)
+Sp <- ((n - 1)*S1 + (n - 1)*S2) / (2*n - 2)
+SE <- (1/n + 1/n) * Sp
+
+diff_bar <- x1bar - x2bar
+T_sq_indep <- t(diff_bar) %*% solve(SE) %*% diff_bar
+crit_indep <- ((2*n - 2) * p / (2*n - p - 1)) * qf(0.95, p, 2*n - p - 1)
+pval_indep <- pf(T_sq_indep * (2*n - p - 1) / (p * (2*n - 2)), df1 = p, df2 = 2*n - p - 1, lower.tail = FALSE)
+
+cat("Hotelling’s T² (Independent):", T_sq_indep, "\n")
+cat("Critical Value:", crit_indep, "\n")
+cat("p-value:", pval_indep, "\n")
+
+# ------------------------------
+# 5. Compare Confidence Regions
+# ------------------------------
+cr_indep <- gen_2D_ellipse_data(diff_bar, SE, sqrt(crit_indep))
+
+plot(cr[,1], cr[,2], type = "l", col = "blue", lwd = 2, asp = 1,
+     xlab = expression(paste(delta[1], ": Age")),
+     ylab = expression(paste(delta[2], ": Glucose")),
+     main = "95% Confidence Regions: Paired vs Independent",
+     xlim = range(c(cr[,1], cr_indep[,1])),
+     ylim = range(c(cr[,2], cr_indep[,2])))
+lines(cr_indep[,1], cr_indep[,2], col = "red", lwd = 2, lty = 2)
+points(0, 0, pch = 15, col = "black")
+
+legend("topright",
+       legend = c("Paired", "Independent", "Null Value"),
+       col = c("blue", "red", "black"),
+       lty = c(1, 2, NA), pch = c(NA, NA, 15))
+```
+
+### Multivariate Regression Analysis 
+
+### One-Way MANOVA: Model with a multi-level categorical predictor
+
+#### One-Way MANOVA - Response vs BMI Categories
+
+```{r}
+# Subset variables
+X <- Diabetes[, c("age", "pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "bmi_cat")]
+colnames(X) <- c("age", "pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "bmi_cat")
+X$bmi_cat <- as.factor(X$bmi_cat)
+
+# Define variables
+p <- 4  # Now we have four dependent variables: pulse_rate, systolic_bp, diastolic_bp, glucose
+group_levels <- levels(X$bmi_cat)
+g <- length(group_levels)
+alpha <- 0.01
+
+# Split data by group
+X_list <- lapply(group_levels, function(lvl) X[X$bmi_cat == lvl, 1:5])  # Adjusted to include all dependent vars
+names(X_list) <- group_levels
+group_sizes <- sapply(X_list, nrow)
+n <- sum(group_sizes)
+
+# Means and Covariances
+xbars <- colMeans(X[, 1:5])  # Adjusted to include all dependent vars
+group_means <- lapply(X_list, colMeans)
+group_covs <- lapply(X_list, cov)
+
+# ------------------------------
+# Part (b): Assumption Checks
+# ------------------------------
+g <- length(group_levels)
+
+# (Re-)open a bigger window and reset margins
+if (dev.cur() == 1) windows(width = 8, height = 10)
+par(mfrow = c(g, 1),
+    mar   = c(4, 4, 2, 1),
+    oma   = c(0, 0, 2, 0))
+
+for (i in 1:g){
+  X_temp   <- X_list[[i]]
+  xbar_temp<- colMeans(X_temp)
+  S_temp   <- cov(X_temp)
+  n_temp   <- nrow(X_temp)
+  dsq      <- mahalanobis(X_temp, xbar_temp, S_temp)
+  quantiles<- qchisq(((1:n_temp) - 0.5) / n_temp, df = p)
+
+  plot(quantiles, sort(dsq),
+       main = paste("Chi-Square Plot:", group_levels[i]),
+       cex  = 1.5, pch = 19, col = rgb(1, 0, 0, 0.3),
+       xlab = "Theoretical Quantiles",
+       ylab = "Sorted Mahalanobis Distance")
+  abline(0, 1, col = "gray", lwd = 2)
+  text(quantiles, sort(dsq), labels = order(dsq), pos = 1, cex = 0.8)
+
+  cat("\nShapiro-Wilk Test for", group_levels[i], ":\n")
+  print(mshapiro.test(t(X_temp)))
+}
+
+# Reset to single-plot layout if needed later
+par(mfrow = c(1,1),
+    mar   = c(5, 4, 4, 2) + 0.1,
+    oma   = c(0, 0, 0, 0))
+
+# Box's M test
+# Ensure bmi_cat is a factor
+X$bmi_cat <- factor(X$bmi_cat)
+
+# Run Box's M test with 'pulse_rate', 'systolic_bp', 'diastolic_bp', 'glucose' as the dependent variables
+boxM(
+  cbind(X$pulse_rate, X$systolic_bp, X$diastolic_bp, X$glucose),  # Dependent variables as a matrix
+  X$bmi_cat                  # Grouping variable
+)
+
+# ------------------------------
+# Part (c): Manual MANOVA
+# ------------------------------
+
+W <- Reduce(`+`, mapply(function(S, n_i) (n_i - 1) * S,
+                        group_covs, group_sizes, SIMPLIFY = FALSE))
+
+B <- Reduce(`+`, mapply(function(mean_vec, n_i) {
+  diff <- matrix(mean_vec - xbars, ncol = 1)
+  n_i * diff %*% t(diff)
+}, group_means, group_sizes, SIMPLIFY = FALSE))
+
+Wilks <- det(W) / det(B + W)
+f_stat <- ((n - g - 1)/(g - 1)) * ((1 - sqrt(Wilks)) / sqrt(Wilks))
+num_df <- 4 * (g - 1)  # Adjusted for 4 dependent variables
+den_df <- 4 * (n - g - 1)
+crit_val <- qf(1 - alpha, num_df, den_df)
+pvalue <- pf(f_stat, num_df, den_df, lower.tail = FALSE)
+
+# Output
+cat("\nMANOVA (Manual Calculation):\n")
+cat("Wilks Lambda =", Wilks, "\n")
+cat("F-stat =", f_stat, "\n")
+cat("Critical value =", crit_val, "\n")
+cat("p-value =", pvalue, "\n")
+
+# ------------------------------
+# Part (d): Built-in MANOVA
+# ------------------------------
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat, data = X)
+summary(fit, test = "Wilks")
+
+# ------------------------------
+# Part (e): Bonferroni‑adjusted univariate post‑hoc CIs
+# ------------------------------
+
+# Extract group sizes and means
+group_levels <- levels(X$bmi_cat)
+ns   <- as.vector(table(X$bmi_cat))
+names(ns) <- group_levels
+
+means_list <- lapply(group_levels, function(lvl) {
+  colMeans(subset(X, bmi_cat==lvl)[, c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose")])  # Adjusted
+})
+names(means_list) <- group_levels
+
+# Total number of univariate tests = p * choose(g,2)
+num_tests   <- p * choose(g,2)
+alpha_star  <- alpha / num_tests
+df_resid    <- n - g
+
+posthoc <- data.frame()
+for (i in 1:p) {
+  varname <- colnames(X)[i]
+  for (pair in combn(group_levels, 2, simplify=FALSE)) {
+    g1 <- pair[1]; g2 <- pair[2]
+    diff_means <- means_list[[g1]][i] - means_list[[g2]][i]
+    SE <- sqrt((1/ns[g1] + 1/ns[g2]) * W[i,i] / df_resid)
+    tcrit <- qt(1 - alpha_star/2, df = df_resid)
+    CI <- diff_means + c(-1,1) * tcrit * SE
+
+    posthoc <- rbind(posthoc, data.frame(
+      Variable    = varname,
+      Comparison  = paste(g1, "vs", g2),
+      Mean_Diff   = diff_means,
+      SE          = SE,
+      CI_Lower    = CI[1],
+      CI_Upper    = CI[2]
+    ))
+  }
+}
+
+print(posthoc, row.names = FALSE)
+
+# ------------------------------
+# Part (f): Pairwise Hotelling’s T² tests
+# ------------------------------
+
+hotelling_test <- function(X1, X2) {
+  n1 <- nrow(X1); n2 <- nrow(X2); p <- ncol(X1)
+  m1 <- colMeans(X1); m2 <- colMeans(X2)
+  S1 <- cov(X1);    S2 <- cov(X2)
+  Spooled <- ((n1-1)*S1 + (n2-1)*S2) / (n1 + n2 - 2)
+  diff    <- matrix(m1 - m2, nrow=1)
+  T2      <- (n1*n2)/(n1+n2) * diff %*% solve(Spooled) %*% t(diff)
+  df1     <- p
+  df2     <- n1 + n2 - p - 1
+  Fval    <- (n1+n2-p-1) * T2 / (p*(n1+n2-2))
+  pval    <- 1 - pf(Fval, df1, df2)
+  as.list(c(T2 = T2[1,1], F = Fval[1,1], df1 = df1, df2 = df2, p_value = pval[1,1]))
+}
+
+pairwise <- combn(group_levels, 2, simplify = FALSE)
+hotelling_results <- do.call(rbind, lapply(pairwise, function(pr) {
+  X1 <- subset(X, bmi_cat==pr[1])[, c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose")]
+  X2 <- subset(X, bmi_cat==pr[2])[, c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose")]
+  res <- hotelling_test(X1, X2)
+  data.frame(
+    Comparison = paste(pr[1], "vs", pr[2]),
+    T2         = res$T2,
+    F_stat     = res$F,
+    df1        = res$df1,
+    df2        = res$df2,
+    p_value    = res$p_value
+  )
+}))
+
+# (Optional) Mark significance at alpha / choose(g,2)
+sig_level <- alpha / choose(g,2)
+hotelling_results$Significant <- hotelling_results$p_value < sig_level
+
+print(hotelling_results, row.names = FALSE)
+```
+
+#### One-Way MANOVA - Response vs Gender Categories
+
+```{r}
+fit_gender <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender, data = X)
+summary(fit_gender, test = "Wilks")
+```
+
+#### One-Way MANOVA - Response vs Hypertension Categories
+
+```{r}
+fit_htn <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive,
+  data = Diabetes
+)
+manova.table_htn <- summary(fit_htn, test = "Wilks")
+
+# pull out residual SS for post‑hoc
+W <- manova.table_htn$SS$Residuals
+```
+
+### Two-Way MANOVA: Model with two multi-level categorical predictor
+
+#### Testing for Gender + BMI Categories
+
+```{r}
+# Ensure categorical variables
+Diabetes$gender     <- as.factor(Diabetes$gender)
+Diabetes$bmi_cat    <- as.factor(Diabetes$bmi_cat)  # Ensure bmi_cat is a factor
+str(Diabetes)
+
+# Sample size and factor levels
+n <- nrow(Diabetes)
+g <- nlevels(Diabetes$gender)
+b <- nlevels(Diabetes$bmi_cat)  # Use bmi_cat levels here
+p <- 4  # Number of response variables
+
+# Balance check
+table(Diabetes$gender, Diabetes$bmi_cat)  # Check distribution of gender and bmi_cat levels
+
+# -------------------------------
+# Assumption Checks
+# -------------------------------
+
+# Select the relevant columns for analysis, including bmi_cat and gender
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "gender", "bmi_cat")
+X <- na.omit(Diabetes[, vars])
+
+# Confirm structure
+str(X)
+
+# -------------------------------
+# Run Box's M test (commented out since it might cause errors if you don't have enough data)
+# -------------------------------
+# boxM(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender + bmi_cat, data = X)
+
+# -------------------------------
+# MANOVA (Wilks test)
+# -------------------------------
+
+# Run MANOVA for gender and bmi_cat (no interaction)
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender + bmi_cat, data = Diabetes)
+manova.table <- summary(fit, test = "Wilks")
+print(manova.table)
+
+# Extract residual covariance matrix (E) and the sum of squares and cross-product (SSCP) for the factors
+E <- manova.table$SS$Residuals
+SSCPgender <- manova.table$SS$gender
+SSCPbmi_cat <- manova.table$SS$bmi_cat
+
+# Check the determinant ratio for the factors
+det(E) / det(SSCPgender + E)  # Gender factor effect
+det(E) / det(SSCPbmi_cat + E)  # BMI category effect
+
+# -------------------------------
+# Bonferroni-adjusted Simultaneous CIs (with unbalanced design)
+# -------------------------------
+
+alpha <- 0.05
+df_res <- n - g - b + 1  # degrees of freedom for residual (adjusted for unbalanced design)
+
+# Group means for gender and bmi_cat
+mean_gender <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender, data = Diabetes, mean)
+mean_bmi_cat <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat, data = Diabetes, mean)
+
+# Differences (assuming multiple levels for gender and bmi_cat)
+# For gender
+diff_gender <- sapply(1:p, function(i) mean_gender[2, i+1] - mean_gender[1, i+1])  # assuming 2 levels for gender
+# For bmi_cat
+diff_bmi_cat <- sapply(1:p, function(i) mean_bmi_cat[2, i+1] - mean_bmi_cat[1, i+1])  # assuming 2 levels for bmi_cat
+
+# Group sizes (unbalanced design)
+n_gender <- table(Diabetes$gender)  # Count number of observations in each gender group
+n_bmi_cat <- table(Diabetes$bmi_cat)  # Count number of observations in each bmi_cat group
+
+# Bonferroni for Gender
+t_crit1 <- qt(alpha / (p * g * (g - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Gender ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit1 * sqrt((1 / n_gender[1] + 1 / n_gender[2]) * (E[i, i] / df_res))  
+  LB <- as.numeric(diff_gender[i] - ME)
+  UB <- as.numeric(diff_gender[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+
+# Bonferroni for BMI Category
+t_crit2 <- qt(alpha / (p * b * (b - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for BMI Category ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit2 * sqrt((1 / n_bmi_cat[1] + 1 / n_bmi_cat[2]) * (E[i, i] / df_res))  
+  LB <- as.numeric(diff_bmi_cat[i] - ME)
+  UB <- as.numeric(diff_bmi_cat[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+```
+
+#### Testing for gender + hypertensive
+
+```{r}
+# Ensure categorical variables
+Diabetes$gender     <- as.factor(Diabetes$gender)
+Diabetes$hypertensive <- as.factor(Diabetes$hypertensive)  # Ensure hypertensive is a factor
+str(Diabetes)
+
+# Sample size and factor levels
+n <- nrow(Diabetes)
+g <- nlevels(Diabetes$gender)
+b <- nlevels(Diabetes$hypertensive)  # Use hypertensive levels here
+p <- 4  # Number of response variables
+
+# Balance check
+table(Diabetes$gender, Diabetes$hypertensive)  # Check distribution of gender and hypertensive levels
+
+# -------------------------------
+# Assumption Checks
+# -------------------------------
+
+# Select the relevant columns for analysis, including hypertensive and gender
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "gender", "hypertensive")
+X <- na.omit(Diabetes[, vars])
+
+# Confirm structure
+str(X)
+
+# -------------------------------
+# Run Box's M test (commented out since it might cause errors if you don't have enough data)
+# -------------------------------
+# boxM(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender + hypertensive, data = X)
+
+# -------------------------------
+# MANOVA (Wilks test)
+# -------------------------------
+
+# Run MANOVA for gender and hypertensive (no interaction)
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender + hypertensive, data = Diabetes)
+manova.table <- summary(fit, test = "Wilks")
+print(manova.table)
+
+# Extract residual covariance matrix (E) and the sum of squares and cross-product (SSCP) for the factors
+E <- manova.table$SS$Residuals
+SSCPgender <- manova.table$SS$gender
+SSCPhypertensive <- manova.table$SS$hypertensive
+
+# Check the determinant ratio for the factors
+det(E) / det(SSCPgender + E)  # Gender factor effect
+det(E) / det(SSCPhypertensive + E)  # Hypertensive factor effect
+
+# -------------------------------
+# Bonferroni-adjusted Simultaneous CIs (Unbalanced design)
+# -------------------------------
+
+alpha <- 0.05
+df_res <- n - g - b + 1  # degrees of freedom for residual (adjusted for unbalanced design)
+
+# Group means for gender and hypertensive
+mean_gender <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender, data = Diabetes, mean)
+mean_hypertensive <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ hypertensive, data = Diabetes, mean)
+
+# Differences (assuming multiple levels for gender and hypertensive)
+# For gender
+diff_gender <- sapply(1:p, function(i) mean_gender[2, i+1] - mean_gender[1, i+1])  # assuming 2 levels for gender
+# For hypertensive
+diff_hypertensive <- sapply(1:p, function(i) mean_hypertensive[2, i+1] - mean_hypertensive[1, i+1])  # assuming 2 levels for hypertensive
+
+# Group sizes (unbalanced design)
+n_gender <- table(Diabetes$gender)  # Count number of observations in each gender group
+n_hypertensive <- table(Diabetes$hypertensive)  # Count number of observations in each hypertensive group
+
+# Bonferroni for Gender
+t_crit1 <- qt(alpha / (p * g * (g - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Gender ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit1 * sqrt((1 / n_gender[1] + 1 / n_gender[2]) * (E[i, i] / df_res))  
+  LB <- as.numeric(diff_gender[i] - ME)
+  UB <- as.numeric(diff_gender[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+
+# Bonferroni for Hypertensive Category
+t_crit2 <- qt(alpha / (p * b * (b - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Hypertensive Category ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit2 * sqrt((1 / n_hypertensive[1] + 1 / n_hypertensive[2]) * (E[i, i] / df_res))  
+  LB <- as.numeric(diff_hypertensive[i] - ME)
+  UB <- as.numeric(diff_hypertensive[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+```
+
+#### Testing for bmi_cat + hypertensive
+
+```{r}
+# Ensure categorical variables
+Diabetes$bmi_cat     <- as.factor(Diabetes$bmi_cat)  # Ensure bmi_cat is a factor
+Diabetes$hypertensive <- as.factor(Diabetes$hypertensive)  # Ensure hypertensive is a factor
+str(Diabetes)
+
+# Sample size and factor levels
+n <- nrow(Diabetes)
+bmi <- nlevels(Diabetes$bmi_cat)
+h <- nlevels(Diabetes$hypertensive)  # Use hypertensive levels here
+p <- 4  # Number of response variables
+
+# Balance check
+table(Diabetes$bmi_cat, Diabetes$hypertensive)  # Check distribution of bmi_cat and hypertensive levels
+
+# -------------------------------
+# Assumption Checks
+# -------------------------------
+
+# Select the relevant columns for analysis, including hypertensive and bmi_cat
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "bmi_cat", "hypertensive")
+X <- na.omit(Diabetes[, vars])
+
+# Confirm structure
+str(X)
+
+# -------------------------------
+# Run Box's M test (commented out since it might cause errors if you don't have enough data)
+# -------------------------------
+# boxM(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat + hypertensive, data = X)
+
+# -------------------------------
+# MANOVA (Wilks test)
+# -------------------------------
+
+# Run MANOVA for bmi_cat and hypertensive (no interaction)
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat + hypertensive, data = Diabetes)
+manova.table <- summary(fit, test = "Wilks")
+print(manova.table)
+
+# Extract residual covariance matrix (E) and the sum of squares and cross-product (SSCP) for the factors
+E <- manova.table$SS$Residuals
+SSCPbmi <- manova.table$SS$bmi_cat
+SSCPhypertensive <- manova.table$SS$hypertensive
+
+# Check the determinant ratio for the factors
+det(E) / det(SSCPbmi + E)  # bmi_cat factor effect
+det(E) / det(SSCPhypertensive + E)  # Hypertensive factor effect
+
+# -------------------------------
+# Bonferroni-adjusted Simultaneous CIs (Unbalanced design)
+# -------------------------------
+
+alpha <- 0.05
+
+# Adjust residual degrees of freedom for unbalanced design
+df_res <- n - bmi - h + 1  # degrees of freedom for residual (adjusted for unbalanced design)
+
+# Group means for bmi_cat and hypertensive
+mean_bmi <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat, data = Diabetes, mean)
+mean_hypertensive <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ hypertensive, data = Diabetes, mean)
+
+# Differences (assuming multiple levels for bmi_cat, and hypertensive)
+# For bmi_cat
+diff_bmi <- sapply(1:p, function(i) mean_bmi[2, i+1] - mean_bmi[1, i+1])  # assuming 2 levels for bmi_cat
+# For hypertensive
+diff_hypertensive <- sapply(1:p, function(i) mean_hypertensive[2, i+1] - mean_hypertensive[1, i+1])  # assuming 2 levels for hypertensive
+
+# Group sizes (unbalanced design)
+n_bmi <- table(Diabetes$bmi_cat)  # Count number of observations in each bmi_cat group
+n_hypertensive <- table(Diabetes$hypertensive)  # Count number of observations in each hypertensive group
+
+# Bonferroni for bmi_cat
+t_crit1 <- qt(alpha / (p * bmi * (bmi - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for bmi_cat ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit1 * sqrt((1 / n_bmi[1] + 1 / n_bmi[2]) * (E[i, i] / df_res))  # Adjust for actual group sizes
+  LB <- as.numeric(diff_bmi[i] - ME)
+  UB <- as.numeric(diff_bmi[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+
+# Bonferroni for Hypertensive Category
+t_crit2 <- qt(alpha / (p * h * (h - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Hypertensive Category ---\n")
+for (i in 1:p) {
+  # Adjusting for unbalanced design: using actual group sizes in the denominator
+  ME <- t_crit2 * sqrt((1 / n_hypertensive[1] + 1 / n_hypertensive[2]) * (E[i, i] / df_res))  # Adjust for actual group sizes
+  LB <- as.numeric(diff_hypertensive[i] - ME)
+  UB <- as.numeric(diff_hypertensive[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+```
+
+#### Testing for Gender*BMI Categories
+
+```{r}
+# Ensure categorical variables
+Diabetes$gender  <- as.factor(Diabetes$gender)
+Diabetes$bmi_cat <- as.factor(Diabetes$bmi_cat)
+str(Diabetes)
+
+# Sample size and factor levels
+n <- nrow(Diabetes)
+g <- nlevels(Diabetes$gender)
+b <- nlevels(Diabetes$bmi_cat)
+p <- 4  # Number of response variables
+
+# Balance check
+table(Diabetes$gender, Diabetes$bmi_cat)
+
+# -------------------------------
+# Assumption Checks
+# -------------------------------
+
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "gender", "bmi_cat")
+X <- na.omit(Diabetes[, vars])
+
+# Confirm structure
+str(X)
+
+X$gender <- as.factor(X$gender)
+X$bmi_cat <- as.factor(X$bmi_cat)
+X$gender_bmi <- interaction(X$gender, X$bmi_cat)
+
+table(X$gender_bmi)
+
+# Create interaction factor
+Diabetes$gender_bmi <- as.factor(interaction(Diabetes$gender, Diabetes$bmi_cat))
+
+# Check for missing cells
+table(Diabetes$gender_bmi)
+
+# Run Box's M test
+# has many problems never figured out how to debug
+# boxM(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender_bmi, data = Diabetes)
+
+# -------------------------------
+# MANOVA (Wilks)
+# -------------------------------
+
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender * bmi_cat, data = Diabetes)
+manova.table <- summary(fit, test = "Wilks")
+print(manova.table)
+
+E <- manova.table$SS$Residuals
+SSCPint <- manova.table$SS$`gender:bmi_cat`
+det(E) / det(SSCPint + E)
+
+# -------------------------------
+# Bonferroni-adjusted Simultaneous CIs (Unbalanced Design)
+# -------------------------------
+
+alpha <- 0.05
+
+# Adjust residual degrees of freedom for unbalanced design
+df_res <- n - g - b + 1  # Adjust degrees of freedom based on unbalanced design
+
+# Group means
+mean_gender <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender, data = Diabetes, mean)
+mean_bmi    <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ bmi_cat, data = Diabetes, mean)
+
+# Differences (assuming 2 levels for gender, and at least 2 for bmi_cat)
+# You can loop over multiple pairwise bmi_cat contrasts if needed
+diff_gender <- mean_gender[2, -1] - mean_gender[1, -1]
+
+# Choose two BMI groups for contrast (adjust this if you want more)
+diff_bmi <- mean_bmi[2, -1] - mean_bmi[1, -1]
+
+# Group sizes (unbalanced design)
+n_gender <- table(Diabetes$gender)  # Count number of observations in each gender group
+n_bmi    <- table(Diabetes$bmi_cat)  # Count number of observations in each bmi_cat group
+
+# Bonferroni for Gender
+t_crit1 <- qt(alpha / (p * g * (g - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Gender ---\n")
+for (i in 1:p) {
+  # Adjust for unbalanced design: using actual group sizes
+  ME <- t_crit1 * sqrt((1 / n_gender[1] + 1 / n_gender[2]) * (E[i, i] / df_res))  # Use actual sample sizes
+  LB <- as.numeric(diff_gender[i] - ME)
+  UB <- as.numeric(diff_gender[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+
+# Bonferroni for BMI Category
+t_crit2 <- qt(alpha / (p * b * (b - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for BMI Category (1 vs 2) ---\n")
+for (i in 1:p) {
+  # Adjust for unbalanced design: using actual group sizes
+  ME <- t_crit2 * sqrt((1 / n_bmi[1] + 1 / n_bmi[2]) * (E[i, i] / df_res))  # Use actual sample sizes
+  LB <- as.numeric(diff_bmi[i] - ME)
+  UB <- as.numeric(diff_bmi[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+```
+
+#### Testing for Hypertensive:Gender
+
+```{r}
+# Ensure categorical variables
+Diabetes$gender     <- as.factor(Diabetes$gender)
+Diabetes$hypertensive <- as.factor(Diabetes$hypertensive)  # Ensure hypertensive is a factor
+str(Diabetes)
+
+# Sample size and factor levels
+n <- nrow(Diabetes)
+g <- nlevels(Diabetes$gender)
+b <- nlevels(Diabetes$hypertensive)  # Use hypertensive levels here
+p <- 4  # Number of response variables
+
+# Balance check
+table(Diabetes$gender, Diabetes$hypertensive)  # Check distribution of gender and hypertensive levels
+
+# -------------------------------
+# Assumption Checks
+# -------------------------------
+
+# Select the relevant columns for analysis, including hypertensive and gender
+vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose", "gender", "hypertensive")
+X <- na.omit(Diabetes[, vars])
+
+# Confirm structure
+str(X)
+
+# Create interaction factor for gender and hypertensive
+X$gender_hypertensive <- interaction(X$gender, X$hypertensive)
+
+# Check the distribution of the interaction factor
+table(X$gender_hypertensive)
+
+# -------------------------------
+# Run Box's M test (commented out since it might cause errors if you don't have enough data)
+# -------------------------------
+# boxM(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender_hypertensive, data = X)
+
+# -------------------------------
+# MANOVA (Wilks)
+# -------------------------------
+
+fit <- manova(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender * hypertensive, data = Diabetes)
+manova.table <- summary(fit, test = "Wilks")
+print(manova.table)
+
+E <- manova.table$SS$Residuals
+SSCPint <- manova.table$SS$`gender:hypertensive`
+det(E) / det(SSCPint + E)
+
+# -------------------------------
+# Bonferroni-adjusted Simultaneous CIs (Unbalanced Design)
+# -------------------------------
+
+alpha <- 0.05
+
+# Adjust residual degrees of freedom for unbalanced design
+df_res <- n - g - b + 1  # Adjust degrees of freedom based on unbalanced design
+
+# Group means for gender and hypertensive
+mean_gender <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ gender, data = Diabetes, mean)
+mean_hypertensive <- aggregate(cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) ~ hypertensive, data = Diabetes, mean)
+
+# Differences (assuming 2 levels for gender, and at least 2 for hypertensive)
+# You can loop over multiple pairwise hypertensive contrasts if needed
+diff_gender <- mean_gender[2, -1] - mean_gender[1, -1]
+
+# Choose two hypertensive groups for contrast (adjust this if you want more)
+diff_hypertensive <- mean_hypertensive[2, -1] - mean_hypertensive[1, -1]
+
+# Group sizes (unbalanced design)
+n_gender <- table(Diabetes$gender)  # Count number of observations in each gender group
+n_hypertensive <- table(Diabetes$hypertensive)  # Count number of observations in each hypertensive group
+
+# Bonferroni for Gender
+t_crit1 <- qt(alpha / (p * g * (g - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Gender ---\n")
+for (i in 1:p) {
+  # Adjust for unbalanced design: using actual group sizes
+  ME <- t_crit1 * sqrt((1 / n_gender[1] + 1 / n_gender[2]) * (E[i, i] / df_res))  # Use actual sample sizes
+  LB <- as.numeric(diff_gender[i] - ME)
+  UB <- as.numeric(diff_gender[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+
+# Bonferroni for Hypertensive Category
+t_crit2 <- qt(alpha / (p * b * (b - 1)), df = df_res, lower.tail = FALSE)
+
+cat("\n--- Bonferroni CI for Hypertensive Category (1 vs 2) ---\n")
+for (i in 1:p) {
+  # Adjust for unbalanced design: using actual group sizes
+  ME <- t_crit2 * sqrt((1 / n_hypertensive[1] + 1 / n_hypertensive[2]) * (E[i, i] / df_res))  # Use actual sample sizes
+  LB <- as.numeric(diff_hypertensive[i] - ME)
+  UB <- as.numeric(diff_hypertensive[i] + ME)
+  cat("CI for", colnames(Diabetes)[i], ": (", round(LB, 4), ", ", round(UB, 4), ")\n")
+}
+```
+
+### MANCOVA
+
+#### Testing BMI Categories and Age
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ bmi_cat + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing Gender Categories and Age
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ gender + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing Hyptertension Categories and Age
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing Hyptertension Categories and Gender Categories
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing Hyptertension Categories and BMI Categories
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing All Categories 
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender + bmi_cat,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing All predictors
+
+```{r}
+# MANCOVA: four outcomes on BMI category + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender + bmi_cat + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+#### Testing Interaction
+
+```{r}
+# MANCOVA: four outcomes on hypertensive*age + gender + bmi_cat + age
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive*age + gender + bmi_cat + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+
+# MANCOVA: four outcomes on 
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender*age + bmi_cat + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+
+# MANCOVA: four outcomes on 
+fit_mancova <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose)
+    ~ hypertensive + gender + bmi_cat*age + age,
+  data = X
+)
+
+# Test overall effects
+summary(fit_mancova, test = "Wilks")
+```
+
+### Model Testing Using AIC 
+
+```{r}
+# number of observations & responses
+n <- nrow(Diabetes)
+m <- 4  # pulse_rate, systolic_bp, diastolic_bp, glucose
+
+# helper to fit, extract Sigma_hat, compute AIC
+compute_aic <- function(formula){
+  fit   <- manova(formula, data = Diabetes)
+  E     <- summary(fit, test="Wilks")$SS$Residuals
+  Z     <- model.matrix(formula, data = Diabetes)
+  d     <- ncol(Z)
+  Sigma <- E / (n - d)
+  aic   <- n * log(det(Sigma)) + 2 * m * d
+  list(AIC = aic, df = d, Sigma = Sigma)
+}
+
+# 1) Age + Gender + BMI_Cat
+res1 <- compute_aic(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) 
+    ~ age + gender + bmi_cat
+)
+
+# 2) Age + Hypertensive + BMI_Cat
+res2 <- compute_aic(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) 
+    ~ age + hypertensive + bmi_cat
+)
+
+# 3) Age + Gender + Hypertensive + BMI_Cat
+res3 <- compute_aic(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) 
+    ~ age + gender + hypertensive + bmi_cat
+)
+
+# Print and compare
+cat("Model 1 (age+gender+bmi_cat):    AIC =", round(res1$AIC,2), " df =", res1$df, "\n")
+cat("Model 2 (age+hypertensive+bmi_cat): AIC =", round(res2$AIC,2), " df =", res2$df, "\n")
+cat("Model 3 (age+gender+hypertensive+bmi_cat): AIC =", round(res3$AIC,2), " df =", res3$df, "\n")
+```
+
+### Final Multivariate Regression Model
+
+```{r}
+final_model <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) 
+  ~ age + hypertensive + bmi_cat + gender, data = Diabetes
+  )
+summary(final_model, test = "Wilks")
+```
+
+#### Model Normality Check
+
+```{r}
+# Extract residuals
+Residuals <- residuals(final_model)
+
+# Mean and Covariance matrix of residuals
+residual_means <- colMeans(Residuals)  # should be close to zero
+S_residual <- cov(Residuals)
+
+# Mahalanobis distance
+dsq <- mahalanobis(Residuals, residual_means, S_residual)
+
+# Q-Q plot
+plot(qchisq(ppoints(nrow(Diabetes)), df = 4), sort(dsq),
+     cex = 2, pch = 19, col = rgb(1, 0, 0, 0.3),
+     xlab = "Theoretical Quantiles", 
+     ylab = "Sorted Squared Statistical Distance",
+     main = "Chi-Square Plot for Residuals")
+abline(0, 1, col = "gray", lwd = 2)
+
+# Annotate points in the plot
+# text(qchisq(ppoints(nrow(Diabetes)), df = 4), sort(dsq), labels = order(dsq), pos = 1, cex = 1)
+```
+
+#### Model Homogentiy Check
+
+```{r}
+# Ensure Residuals and Fitted values are matrices of the correct dimensions
+Residuals <- as.matrix(residuals(final_model))  # (5046, 4)
+Fitted <- as.matrix(fitted(final_model))  # (5046, 4)
+
+# Compute Sigma_hat (Residual covariance matrix)
+Sigma_hat <- cov(Residuals)  # (4, 4) matrix
+inv_Sigma_hat <- solve(Sigma_hat)  # (4, 4) matrix
+
+# Mahalanobis distance for residuals (studentized)
+d_res_num <- diag(Residuals %*% inv_Sigma_hat %*% t(Residuals))  # (5046,)
+d_res_den <- 1 - diag(model.matrix(final_model))  # residual degrees of freedom (5046,)
+d_res <- sqrt(d_res_num / d_res_den)  # (5046,)
+
+# Mahalanobis distance for fitted values
+d_fit_num <- diag(Fitted %*% inv_Sigma_hat %*% t(Fitted))  # (5046,)
+d_fit_den <- 1 - diag(model.matrix(final_model))  # fitted degrees of freedom (5046,)
+d_fit <- sqrt(d_fit_num / d_fit_den)  # (5046,)
+
+# Check dimensions
+length(d_res)  # Should be 5046
+length(d_fit)  # Should be 5046
+```
+
+#### Outliers for this model
+
+```{r}
+# 1. Mahalanobis Distance
+# Extract the residuals
+Residuals <- residuals(final_model)
+
+# Calculate the covariance matrix of residuals
+Sigma_hat <- cov(Residuals)
+
+# Calculate the inverse covariance matrix
+inv_Sigma_hat <- solve(Sigma_hat)
+
+# Mahalanobis distance for residuals
+mahal_dist <- mahalanobis(Residuals, colMeans(Residuals), Sigma_hat)
+
+# Determine a threshold for identifying outliers (e.g., 99th percentile)
+threshold <- qchisq(0.99, df = ncol(Residuals))  # Chi-squared critical value
+
+# Identify outliers
+outliers_mahal <- which(mahal_dist > threshold)
+
+# Print legnth of outlier indices
+length(outliers_mahal)
+
+# Print outlier indices
+outliers_mahal
+```
+
+```{r}
+# 2. Cook's Distance
+# Cook's distance for the final model
+cooks_dist <- cooks.distance(final_model)
+
+# Set a threshold for Cook's distance (commonly 4/n, where n is the number of observations)
+threshold_cooks <- 4 / nrow(Diabetes)
+
+# Identify influential points (outliers)
+outliers_cooks <- which(cooks_dist > threshold_cooks)
+
+# Print length of outlier indices
+length(outliers_cooks)
+```
+
+```{r}
+# Plotting Outliers
+# Plot Mahalanobis distance
+plot(mahal_dist, main = "Mahalanobis Distance", ylab = "Distance", xlab = "Observation Index")
+abline(h = threshold, col = "red", lty = 2, lwd=2)
+
+# Plot Cook's Distance
+plot(cooks_dist, main = "Cook's Distance", ylab = "Cook's Distance", xlab = "Observation Index")
+abline(h = threshold_cooks, col = "blue", lty = 2, lwd=2)
+```
+
+### Check Final Model Without Influentail Outliers AIC
+
+```{r}
+Y <- as.matrix(Diabetes[, c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose")])
+
+Y_out <- Y[-outliers_mahal, ]
+Diabetes_out <- Diabetes[-outliers_mahal, ]
+
+# 3) Re‐run your final MANOVA on the transformed data
+final_model <- manova(
+  cbind(pulse_rate, systolic_bp, diastolic_bp, glucose) 
+    ~ age + gender + hypertensive + bmi_cat,
+  data = Diabetes_out
+)
+
+# 4) Summarize
+summary(final_model, test = "Wilks")
+
+# 5) AIC
+# Extract residual covariance matrix (Sigma)
+E <- summary(final_model, test = "Wilks")$SS$Residuals  # Extract residuals from MANOVA output
+Sigma_hat <- E / (nrow(Diabetes) - ncol(model.matrix(final_model)))  # Covariance matrix
+
+# Degrees of freedom (d) = number of parameters in the model
+d <- ncol(model.matrix(final_model))
+
+# Number of responses (m)
+m <- 4  # For pulse_rate, systolic_bp, diastolic_bp, glucose
+
+# Calculate AIC
+AIC_final_model <- nrow(Diabetes) * log(det(Sigma_hat)) + 2 * m * d
+cat("AIC for the final model: ", AIC_final_model, "\n")
+
+# AIC w/ outliers = 80686.2
+# AIC w/out outliers = 77972.44 
+
+# Without outliers found above the final model AIC is lower in comparison
+```
+
+```{r}
+# List of dependent variables from the MANOVA
+response_vars <- c("pulse_rate", "systolic_bp", "diastolic_bp", "glucose")
+
+# Common formula terms (RHS)
+rhs_formula <- "~ age + gender + hypertensive + bmi_cat"
+
+# Build individual lm models
+individual_models <- lapply(response_vars, function(resp) {
+  formula <- as.formula(paste(resp, rhs_formula))
+  lm(formula, data = Diabetes_out)
+})
+
+# Name each model
+names(individual_models) <- response_vars
+
+# Example: Show summary of each
+lapply(individual_models, summary)
+```
+
+### Repeated Measure Design (including Paired Comparison)
+
+```{r}
+
+```
+
+
+## Section 5: Results Notes
+
+- Want only adults in the analysis (Age $\geq$ 18)
+- Want bmi that is considered possible and within range of values from other sources (15 $\leq$ BMI $leq$ 55)
+- Want a pulse rate that can be considered normal even for an athlete (Pulse Rate $\geq$ 40)
+- If SBP $\geq$ 210 then considered medical emergency
+- If glucose is less than 4.0 and greater than 13.3 then considered a medical emergency.
+- Still running into a normality issue, but it seems that using Simultaneous optimization transformation works best comapred than no transformation, and other transformation
+
